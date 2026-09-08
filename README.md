@@ -2,7 +2,7 @@
 
 A Gen Z-first digital banking app for South Africa, built as an elective project combining **Cyber Security** and **Systems Integration**.
 
-Bank4Z isn't just "a banking app with slang slapped on it" — the goal is a proper, secure, well-integrated banking backend that happens to talk to its users the way Gen Z actually talks to each other. Security and system design are the substance. The tone is the delivery.
+Bank4Z isn't just "a banking app with slang slapped on it", the goal is a proper, secure, well-integrated banking backend that happens to talk to its users the way Gen Z actually talks to each other. Security and system design are the substance. The tone is the delivery.
 
 ---
 
