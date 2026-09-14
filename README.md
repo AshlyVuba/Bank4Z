@@ -2,7 +2,7 @@
 
 A Gen Z-first digital banking app for South Africa, built as an elective project combining **Cyber Security** and **Systems Integration**.
 
-Bank4Z isn't just "a banking app with slang slapped on it", the goal is a proper, secure, well-integrated banking com.bank4z.backend that happens to talk to its users the way Gen Z actually talks to each other. Security and system design are the substance. The tone is the delivery.
+Bank4Z isn't just "a banking app with slang slapped on it", the goal is a proper, secure, well-integrated banking backend that happens to talk to its users the way Gen Z actually talks to each other. Security and system design are the substance. The tone is the delivery.
 
 ---
 
@@ -82,7 +82,7 @@ This is the part that makes Bank4Z feel like it was actually made *for* the user
 | Transfer limit exceeded | "You have exceeded your daily transfer limit" | "Uhmmm, Slow down, what's the rush" |
 
 **Guardrails for this system (important for your writeup):**
-- The **fun copy is presentation-layer only** — it never replaces proper error codes, logs, or com.bank4z.backend validation messages. Internally, everything still logs as `INSUFFICIENT_FUNDS`, `FRAUD_FLAG_RAISED`, etc. The slang is what the *user* sees; the audit trail stays formal and professional.
+- The **fun copy is presentation-layer only** — it never replaces proper error codes, logs, or backend validation messages. Internally, everything still logs as `INSUFFICIENT_FUNDS`, `FRAUD_FLAG_RAISED`, etc. The slang is what the *user* sees; the audit trail stays formal and professional.
 - Security-critical messages (fraud flags, suspicious login) keep the playful tone but never sacrifice clarity — the user still needs to immediately understand something serious is happening.
 - Keep a single `messages.properties`-style file (or equivalent JSON) so all copy lives in one place and can be toggled to a "formal mode" if needed for demo/marking purposes.
 
@@ -96,7 +96,7 @@ cd bank4z
 # start dependencies (Postgres, Kafka) via Docker
 docker-compose up -d
 
-# run the com.bank4z.backend
+# run the backend
 ./mvnw spring-boot:run
 
 # run the frontend
@@ -111,7 +111,7 @@ Update `application.yml` / `.env` with your local DB and broker credentials befo
 
 ```
 bank4z/
-├── com.bank4z.backend/
+├── backend/
 │   ├── auth-service/
 │   ├── account-service/
 │   ├── fraud-service/
