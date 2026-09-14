@@ -111,18 +111,24 @@ Update `application.yml` / `.env` with your local DB and broker credentials befo
 
 ```
 bank4z/
-├── backend/
-│   ├── auth-service/
-│   ├── account-service/
-│   ├── fraud-service/
-│   ├── notification-service/
-│   └── common/            # shared DTOs, security config, messages
-├── mobile-app/             # React Native / Flutter frontend
-├── docs/
-│   ├── Bank4Z_UML_Diagrams.md
-│   └── README.md
+├── pom.xml
+├── Dockerfile
 ├── docker-compose.yml
-└── pom.xml
+├── .env.example
+├── .dockerignore
+└── src/
+    └── main/
+        ├── java/com/bank4z/backend/
+        │   ├── BackendApplication.java
+        │   ├── config/JpaAuditingConfig.java
+        │   └── entity/
+        │       ├── BaseAuditableEntity.java
+        │       ├── User.java
+        │       ├── Account.java
+        │       └── Transaction.java
+        └── resources/
+            ├── application.yml
+            └── db/migration/V1__init_schema.sql
 ```
 
 ## Iteration plan
