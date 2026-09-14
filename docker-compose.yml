@@ -21,7 +21,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: bank4z-backend
+    container_name: bank4z-com.bank4z.backend
     restart: unless-stopped
     depends_on:
       postgres:
