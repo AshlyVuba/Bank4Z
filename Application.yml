@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: bank4z-backend
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:bank4z}
+    username: ${DB_USER:bank4z_user}
+    password: ${DB_PASSWORD:changeme}
+
+  jpa:
+    hibernate:
+      # Flyway owns the schema — Hibernate should only ever verify it matches,
+      # never auto-generate or alter tables itself.
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+
+jwt:
+  secret: ${JWT_SECRET:replace-this-in-.env}
+  expiration-ms: 3600000        # 1 hour access token
+  refresh-expiration-ms: 604800000  # 7 days refresh token
