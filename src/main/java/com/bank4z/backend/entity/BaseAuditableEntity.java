@@ -1,4 +1,4 @@
-package com.bank4z.backend.entity;
+package com.bank4z.backend.common.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.EntityListeners;
@@ -12,7 +12,7 @@ import java.time.Instant;
 /**
  * Every Bank4Z entity extends this so audit columns (created_at, updated_at)
  * are handled consistently instead of repeated per-entity.
- * Requires @EnableJpaAuditing (see JpaAuditingConfig).
+ * Requires @EnableJpaAuditing (see JpaAuditingConfig in common.config).
  */
 @MappedSuperclass
 @EntityListeners(AuditingEntityListener.class)
