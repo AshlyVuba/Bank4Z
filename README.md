@@ -110,7 +110,9 @@ Update `application.yml` / `.env` with your local DB and broker credentials befo
 ## Project structure
 
 ```
-bank4z/
+Bank4Z/
+├── .idea/
+├── mobile-app/
 ├── pom.xml
 ├── Dockerfile
 ├── docker-compose.yml
@@ -120,15 +122,41 @@ bank4z/
     └── main/
         ├── java/com/bank4z/backend/
         │   ├── BackendApplication.java
-        │   ├── config/JpaAuditingConfig.java
-        │   └── entity/
-        │       ├── BaseAuditableEntity.java
-        │       ├── User.java
-        │       ├── Account.java
-        │       └── Transaction.java
+        │   │
+        │   ├── common/
+        │   │   ├── config/
+        │   │   │   ├── JpaAuditingConfig.java
+        │   │   │   └── SecurityConfig.java
+        │   │   ├── entity/
+        │   │   │   └── BaseAuditableEntity.java
+        │   │   ├── exception/
+        │   │   │   └── GlobalExceptionHandler.java
+        │   │   └── validation/
+        │   │       ├── ValidSaId.java
+        │   │       └── SaIdNumberValidator.java
+        │   │
+        │   ├── authservice/
+        │   │   ├── User.java
+        │   │   ├── UserRepository.java
+        │   │   ├── AuthService.java
+        │   │   ├── AuthController.java
+        │   │   ├── DuplicateUserException.java
+        │   │   └── dto/
+        │   │       ├── RegisterRequest.java
+        │   │       └── UserResponse.java
+        │   │
+        │   ├── accountservice/
+        │   │   ├── Account.java
+        │   │   └── Transaction.java
+        │   │
+        │   ├── fraudservice/            (empty — Iteration 3)
+        │   └── notificationservice/     (empty — Iteration 4)
+        │
         └── resources/
             ├── application.yml
-            └── db/migration/V1__init_schema.sql
+            └── db/migration/
+                ├── V1__init_schema.sql
+                └── V2__add_phone_to_users.sql
 ```
 
 ## Iteration plan
