@@ -1,5 +1,6 @@
 package com.bank4z.backend.authservice;
 
+import com.bank4z.backend.accountservice.AccountService;
 import com.bank4z.backend.authservice.dto.AuthResponse;
 import com.bank4z.backend.authservice.dto.LoginRequest;
 import com.bank4z.backend.authservice.dto.RegisterRequest;
@@ -20,6 +21,7 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final AuthenticationManager authenticationManager;
     private final JwtService jwtService;
+    private final AccountService accountService;
 
     @Value("${jwt.expiration-ms}")
     private long accessTokenExpiryMs;
@@ -27,11 +29,13 @@ public class AuthService {
     public AuthService(UserRepository userRepository,
                        PasswordEncoder passwordEncoder,
                        AuthenticationManager authenticationManager,
-                       JwtService jwtService) {
+                       JwtService jwtService,
+                       AccountService accountService) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.authenticationManager = authenticationManager;
         this.jwtService = jwtService;
+        this.accountService = accountService;
     }
 
     @Transactional
@@ -55,9 +59,14 @@ public class AuthService {
                 request.phoneNumber(),
                 hashedPassword
         );
+        userRepository.save(user);
 
-        // Note: account auto-creation happens in B4Z-06, not here.
-        return userRepository.save(user);
+        // Same transaction as the user save — if account creation fails
+        // (e.g. AccountNumberGenerator exhausts its retries), the whole
+        // registration rolls back rather than leaving an accountless user.
+        accountService.createAccountForUser(user);
+
+        return user;
     }
 
     public AuthResponse login(LoginRequest request) {
@@ -66,8 +75,6 @@ public class AuthService {
                     new UsernamePasswordAuthenticationToken(request.email(), request.password())
             );
         } catch (AuthenticationException e) {
-            // Deliberately vague — never reveal whether it was the email
-            // or the password that was wrong.
             throw new BadCredentialsException("Email or password is incorrect");
         }
 
