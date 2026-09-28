@@ -1,5 +1,6 @@
 package com.bank4z.backend.common.exception;
 
+import com.bank4z.backend.accountservice.AccountNotFoundException;
 import com.bank4z.backend.authservice.DuplicateUserException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -27,6 +28,12 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(DuplicateUserException.class)
     public ResponseEntity<Map<String, Object>> handleDuplicateUser(DuplicateUserException ex) {
         return ResponseEntity.status(HttpStatus.CONFLICT)
+                .body(body(ex.getMessage(), null));
+    }
+
+    @ExceptionHandler(AccountNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleAccountNotFound(AccountNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(body(ex.getMessage(), null));
     }
 

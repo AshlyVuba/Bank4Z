@@ -4,6 +4,8 @@ import com.bank4z.backend.authservice.User;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.UUID;
+
 @Service
 public class AccountService {
 
@@ -15,14 +17,15 @@ public class AccountService {
         this.accountNumberGenerator = accountNumberGenerator;
     }
 
-    /**
-     * Called right after a user registers. Balance starts at 0 by the
-     * Account entity's default — nothing to set explicitly here.
-     */
     @Transactional
     public Account createAccountForUser(User user) {
         String accountNumber = accountNumberGenerator.generate();
         Account account = new Account(user, accountNumber);
         return accountRepository.save(account);
+    }
+
+    public Account getAccountForUser(UUID userId) {
+        return accountRepository.findByUserId(userId)
+                .orElseThrow(() -> new AccountNotFoundException("No account found for this user"));
     }
 }
