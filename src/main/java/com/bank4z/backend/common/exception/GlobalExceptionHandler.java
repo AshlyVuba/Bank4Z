@@ -1,6 +1,8 @@
 package com.bank4z.backend.common.exception;
 
 import com.bank4z.backend.accountservice.AccountNotFoundException;
+import com.bank4z.backend.accountservice.InsufficientFundsException;
+import com.bank4z.backend.accountservice.InvalidTransferException;
 import com.bank4z.backend.authservice.DuplicateUserException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -37,10 +39,30 @@ public class GlobalExceptionHandler {
                 .body(body(ex.getMessage(), null));
     }
 
+    @ExceptionHandler(InsufficientFundsException.class)
+    public ResponseEntity<Map<String, Object>> handleInsufficientFunds(InsufficientFundsException ex) {
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY)
+                .body(bodyWithCode(InsufficientFundsException.CODE, ex.getMessage()));
+    }
+
+    @ExceptionHandler(InvalidTransferException.class)
+    public ResponseEntity<Map<String, Object>> handleInvalidTransfer(InvalidTransferException ex) {
+        return ResponseEntity.badRequest()
+                .body(bodyWithCode(InvalidTransferException.CODE, ex.getMessage()));
+    }
+
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<Map<String, Object>> handleBadCredentials(BadCredentialsException ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                 .body(body(ex.getMessage(), null));
+    }
+
+    // Same shape as body(), plus a stable machine-readable "code". The message
+    // can be as fun as we like; the code is what logs and clients rely on.
+    private Map<String, Object> bodyWithCode(String code, String message) {
+        Map<String, Object> body = body(message, null);
+        body.put("code", code);
+        return body;
     }
 
     private Map<String, Object> body(String message, Object details) {
