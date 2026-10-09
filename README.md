@@ -40,7 +40,7 @@ Bank4Z's angle: keep the actual banking rock-solid (real auth, real fraud detect
 
 ## Architecture overview
 
-Full diagrams live in [`Bank4Z_UML_Diagrams.md`](./Bank4Z_UML_Diagrams.md). Summary of the flow:
+Full diagrams live in . Summary of the flow:
 
 ```
 Client App → API Gateway (Security) → Application Services → Message Broker/Integration → Database
@@ -112,11 +112,28 @@ Update `application.yml` / `.env` with your local DB and broker credentials befo
 ```
 Bank4Z/
 ├── .idea/
-├── mobile-app/
+mobile-app/
+└── lib/
+    ├── main.dart
+
+    ├── config/
+    │   └── api_config.dart
+
+    ├── models/                          
+    │   ├── account.dart                 
+    │   └── transaction.dart             
+
+    ├── services/
+    │   ├── auth_service.dart
+    │   └── account_service.dart         
+
+    └── screens/
+        ├── login_screen.dart
+        ├── register_screen.dart
+        └── home_screen.dart            
 ├── pom.xml
 ├── Dockerfile
 ├── docker-compose.yml
-├── .env.example
 ├── .dockerignore
 └── src/
     └── main/
