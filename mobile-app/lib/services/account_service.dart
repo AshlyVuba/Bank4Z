@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import '../models/account.dart';
 import '../models/transaction.dart';
+import '../models/transfer_result.dart';
 import 'auth_service.dart';
 
 class AccountService {
@@ -45,9 +46,34 @@ class AccountService {
     return content.map((json) => BankTransaction.fromJson(json)).toList();
   }
 
+  Future<TransferResult> transfer({
+    required String recipientAccountNumber,
+    required double amount,
+    String? reference,
+  }) async {
+    final response = await http.post(
+      Uri.parse('${ApiConfig.baseUrl}/transfers'),
+      headers: await _authHeaders(),
+      body: jsonEncode({
+        'recipientAccountNumber': recipientAccountNumber,
+        'amount': amount,
+        if (reference != null && reference.isNotEmpty) 'reference': reference,
+      }),
+    );
+
+    if (response.statusCode != 201) {
+      throw ApiException(_extractMessage(response.body));
+    }
+    return TransferResult.fromJson(jsonDecode(response.body));
+  }
+
   String _extractMessage(String responseBody) {
     try {
       final decoded = jsonDecode(responseBody);
+      if (decoded['details'] != null) {
+        final details = decoded['details'] as Map<String, dynamic>;
+        return details.values.first.toString();
+      }
       return decoded['message'] ?? 'Something went wrong. Try again.';
     } catch (_) {
       return 'Something went wrong. Try again.';

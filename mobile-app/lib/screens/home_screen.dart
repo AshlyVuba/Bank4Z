@@ -76,6 +76,11 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _openTransfer() async {
+    final sent = await Navigator.pushNamed(context, '/transfer');
+    if (sent == true) _loadInitial();
+  }
+
   Future<void> _handleLogout() async {
     await AuthService().logout();
     if (!mounted) return;
@@ -91,6 +96,11 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(icon: const Icon(Icons.logout), onPressed: _handleLogout),
         ],
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _openTransfer,
+        icon: const Icon(Icons.send),
+        label: const Text('Send money'),
+      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
@@ -98,7 +108,7 @@ class _HomeScreenState extends State<HomeScreen> {
           : RefreshIndicator(
         onRefresh: _loadInitial,
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
           children: [
             _buildBalanceCard(),
             const SizedBox(height: 24),
