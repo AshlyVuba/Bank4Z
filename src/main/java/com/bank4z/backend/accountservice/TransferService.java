@@ -2,6 +2,7 @@ package com.bank4z.backend.accountservice;
 
 import com.bank4z.backend.accountservice.dto.TransferRequest;
 import com.bank4z.backend.accountservice.dto.TransferResponse;
+import com.bank4z.backend.notificationservice.NotificationService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,15 +16,24 @@ public class TransferService {
     private final AccountService accountService;
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
+    private final NotificationService notificationService;
 
     public TransferService(AccountService accountService,
                            AccountRepository accountRepository,
-                           TransactionRepository transactionRepository) {
+                           TransactionRepository transactionRepository,
+                           NotificationService notificationService) {
         this.accountService = accountService;
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
+        this.notificationService = notificationService;
     }
 
+    /**
+     * Everything below runs in ONE database transaction: either both balances
+     * change and both transaction rows are written, or nothing happens at all.
+     *
+     * Fraud checks (B4Z-11) will plug in right before the money moves.
+     */
     @Transactional
     public TransferResponse transfer(UUID senderUserId, TransferRequest request) {
         // The sender comes from the authenticated user, never from the request body.
@@ -74,12 +84,19 @@ public class TransferService {
         transactionRepository.save(debit);
         transactionRepository.save(credit);
 
+        // Runs inside the same database transaction as the transfer for now.
+        // In Iteration 4 (B4Z-15/17) this becomes a published event consumed by
+        // the notification service, so a notification problem can never block
+        // or undo a payment.
+        notificationService.notifyTransferSent(sender.getUser(), amount, recipientNumber);
+        notificationService.notifyTransferReceived(recipient.getUser(), amount, senderNumber);
+
         return new TransferResponse(
                 debit.getId(),
                 recipientNumber,
                 amount,
                 sender.getBalance(),
-                "Sent! You just got a little broker."
+                "Sent! Money moved, no cap 💸"
         );
     }
 

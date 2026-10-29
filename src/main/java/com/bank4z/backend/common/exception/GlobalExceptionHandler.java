@@ -3,6 +3,7 @@ package com.bank4z.backend.common.exception;
 import com.bank4z.backend.accountservice.AccountNotFoundException;
 import com.bank4z.backend.accountservice.InsufficientFundsException;
 import com.bank4z.backend.accountservice.InvalidTransferException;
+import com.bank4z.backend.notificationservice.NotificationNotFoundException;
 import com.bank4z.backend.authservice.DuplicateUserException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -49,6 +50,12 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, Object>> handleInvalidTransfer(InvalidTransferException ex) {
         return ResponseEntity.badRequest()
                 .body(bodyWithCode(InvalidTransferException.CODE, ex.getMessage()));
+    }
+
+    @ExceptionHandler(NotificationNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleNotificationNotFound(NotificationNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(body(ex.getMessage(), null));
     }
 
     @ExceptionHandler(BadCredentialsException.class)

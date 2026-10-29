@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/auth_service.dart';
 import '../services/account_service.dart';
+import '../services/notification_service.dart';
 import '../models/account.dart';
 import '../models/transaction.dart';
 
@@ -15,6 +16,8 @@ class _HomeScreenState extends State<HomeScreen> {
   static const int _pageSize = 20;
 
   final _accountService = AccountService();
+  final _notificationService = NotificationService();
+  int _unreadCount = 0;
   Account? _account;
   final List<BankTransaction> _transactions = [];
 
@@ -39,8 +42,15 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final account = await _accountService.getMyAccount();
       final transactions = await _accountService.getMyTransactions(page: 0, size: _pageSize);
+      var unread = 0;
+      try {
+        unread = await _notificationService.getUnreadCount();
+      } catch (_) {
+        // A notification hiccup shouldn't take down the whole dashboard.
+      }
       setState(() {
         _account = account;
+        _unreadCount = unread;
         _transactions
           ..clear()
           ..addAll(transactions);
@@ -76,6 +86,20 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  Future<void> _openNotifications() async {
+    await Navigator.pushNamed(context, '/notifications');
+    _refreshUnreadCount(); // badge should reflect anything read while away
+  }
+
+  Future<void> _refreshUnreadCount() async {
+    try {
+      final unread = await _notificationService.getUnreadCount();
+      if (mounted) setState(() => _unreadCount = unread);
+    } catch (_) {
+      // keep the old badge if this fails
+    }
+  }
+
   Future<void> _openTransfer() async {
     final sent = await Navigator.pushNamed(context, '/transfer');
     if (sent == true) _loadInitial();
@@ -93,6 +117,14 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('Bank4Z'),
         actions: [
+          IconButton(
+            icon: Badge(
+              isLabelVisible: _unreadCount > 0,
+              label: Text('$_unreadCount'),
+              child: const Icon(Icons.notifications_outlined),
+            ),
+            onPressed: _openNotifications,
+          ),
           IconButton(icon: const Icon(Icons.logout), onPressed: _handleLogout),
         ],
       ),

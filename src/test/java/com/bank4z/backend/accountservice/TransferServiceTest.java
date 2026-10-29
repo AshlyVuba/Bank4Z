@@ -3,6 +3,7 @@ package com.bank4z.backend.accountservice;
 import com.bank4z.backend.accountservice.dto.TransferRequest;
 import com.bank4z.backend.accountservice.dto.TransferResponse;
 import com.bank4z.backend.authservice.User;
+import com.bank4z.backend.notificationservice.NotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -31,6 +32,7 @@ class TransferServiceTest {
     @Mock AccountService accountService;
     @Mock AccountRepository accountRepository;
     @Mock TransactionRepository transactionRepository;
+    @Mock NotificationService notificationService;
     @InjectMocks TransferService transferService;
 
     private final UUID senderUserId = UUID.randomUUID();
@@ -63,6 +65,8 @@ class TransferServiceTest {
         assertThat(recipient.getBalance()).isEqualByComparingTo("40.50");
         assertThat(response.newBalance()).isEqualByComparingTo("59.50");
         verify(transactionRepository, times(2)).save(any(Transaction.class));
+        verify(notificationService).notifyTransferSent(sender.getUser(), new BigDecimal("40.50"), RECIPIENT_NUMBER);
+        verify(notificationService).notifyTransferReceived(recipient.getUser(), new BigDecimal("40.50"), SENDER_NUMBER);
     }
 
     @Test
