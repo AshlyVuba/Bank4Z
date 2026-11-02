@@ -28,3 +28,9 @@ jwt:
   secret: ${JWT_SECRET:replace-this-in-.env}
   expiration-ms: 3600000        # 1 hour access token
   refresh-expiration-ms: 604800000  # 7 days refresh token
+
+# Optional first-admin bootstrap (see AdminBootstrap). Blank = skipped.
+bank4z:
+  admin:
+    email: ${ADMIN_EMAIL:}
+    password: ${ADMIN_PASSWORD:}
