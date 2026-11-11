@@ -1,20 +1,25 @@
 import 'package:flutter/material.dart';
-import '../models/bank_notification.dart';
-import '../services/auth_service.dart'; // for ApiException
+import '../services/auth_service.dart';
+import '../services/account_service.dart';
 import '../services/notification_service.dart';
+import '../models/account.dart';
+import '../models/transaction.dart';
 
-class NotificationsScreen extends StatefulWidget {
-  const NotificationsScreen({super.key});
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
 
   @override
-  State<NotificationsScreen> createState() => _NotificationsScreenState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _NotificationsScreenState extends State<NotificationsScreen> {
+class _HomeScreenState extends State<HomeScreen> {
   static const int _pageSize = 20;
 
-  final _service = NotificationService();
-  final List<BankNotification> _items = [];
+  final _accountService = AccountService();
+  final _notificationService = NotificationService();
+  int _unreadCount = 0;
+  Account? _account;
+  final List<BankTransaction> _transactions = [];
 
   int _page = 0;
   bool _hasMore = true;
@@ -35,13 +40,22 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     });
 
     try {
-      final items = await _service.getNotifications(page: 0, size: _pageSize);
+      final account = await _accountService.getMyAccount();
+      final transactions = await _accountService.getMyTransactions(page: 0, size: _pageSize);
+      var unread = 0;
+      try {
+        unread = await _notificationService.getUnreadCount();
+      } catch (_) {
+        // A notification hiccup shouldn't take down the whole dashboard.
+      }
       setState(() {
-        _items
+        _account = account;
+        _unreadCount = unread;
+        _transactions
           ..clear()
-          ..addAll(items);
+          ..addAll(transactions);
         _page = 0;
-        _hasMore = items.length == _pageSize;
+        _hasMore = transactions.length == _pageSize;
       });
     } on ApiException catch (e) {
       setState(() => _error = e.message);
@@ -58,60 +72,66 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
     try {
       final nextPage = _page + 1;
-      final items = await _service.getNotifications(page: nextPage, size: _pageSize);
+      final transactions = await _accountService.getMyTransactions(page: nextPage, size: _pageSize);
       setState(() {
-        _items.addAll(items);
+        _transactions.addAll(transactions);
         _page = nextPage;
-        _hasMore = items.length == _pageSize;
+        _hasMore = transactions.length == _pageSize;
       });
     } catch (_) {
-      // Silent: the user already has data on screen.
+      // "Load more" fails silently — the user still has their existing data
+      // on screen, so no need to interrupt them for a background fetch.
     } finally {
       if (mounted) setState(() => _isLoadingMore = false);
     }
   }
 
-  Future<void> _markRead(BankNotification n) async {
-    if (n.read) return;
-    setState(() => n.read = true); // optimistic: feels instant
+  Future<void> _openNotifications() async {
+    await Navigator.pushNamed(context, '/notifications');
+    _refreshUnreadCount(); // badge should reflect anything read while away
+  }
+
+  Future<void> _refreshUnreadCount() async {
     try {
-      await _service.markAsRead(n.id);
+      final unread = await _notificationService.getUnreadCount();
+      if (mounted) setState(() => _unreadCount = unread);
     } catch (_) {
-      if (mounted) setState(() => n.read = false); // roll back if it failed
+      // keep the old badge if this fails
     }
   }
 
-  Future<void> _markAllRead() async {
-    try {
-      await _service.markAllAsRead();
-      if (!mounted) return;
-      setState(() {
-        for (final n in _items) {
-          n.read = true;
-        }
-      });
-    } on ApiException catch (e) {
-      _showError(e.message);
-    } catch (_) {
-      _showError('Couldn\'t reach the server. Check your connection.');
-    }
+  Future<void> _openTransfer() async {
+    final sent = await Navigator.pushNamed(context, '/transfer');
+    if (sent == true) _loadInitial();
   }
 
-  void _showError(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  Future<void> _handleLogout() async {
+    await AuthService().logout();
+    if (!mounted) return;
+    Navigator.pushReplacementNamed(context, '/login');
   }
 
   @override
   Widget build(BuildContext context) {
-    final hasUnread = _items.any((n) => !n.read);
-
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Notifications'),
+        title: const Text('Bank4Z'),
         actions: [
-          if (hasUnread)
-            TextButton(onPressed: _markAllRead, child: const Text('Mark all read')),
+          IconButton(
+            icon: Badge(
+              isLabelVisible: _unreadCount > 0,
+              label: Text('$_unreadCount'),
+              child: const Icon(Icons.notifications_outlined),
+            ),
+            onPressed: _openNotifications,
+          ),
+          IconButton(icon: const Icon(Icons.logout), onPressed: _handleLogout),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _openTransfer,
+        icon: const Icon(Icons.send),
+        label: const Text('Send money'),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -119,7 +139,34 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ? _buildError()
           : RefreshIndicator(
         onRefresh: _loadInitial,
-        child: _items.isEmpty ? _buildEmpty() : _buildList(),
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+          children: [
+            _buildBalanceCard(),
+            const SizedBox(height: 24),
+            const Text(
+              'Recent activity',
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            if (_transactions.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 32),
+                child: Center(child: Text('Nothing here yet — go make some moves 💸')),
+              )
+            else
+              ..._transactions.map(_buildTransactionTile),
+            if (_hasMore)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                child: Center(
+                  child: _isLoadingMore
+                      ? const CircularProgressIndicator()
+                      : TextButton(onPressed: _loadMore, child: const Text('Load more')),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -140,58 +187,44 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
     );
   }
 
-  Widget _buildEmpty() {
-    // A scrollable, so pull-to-refresh still works on an empty list
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      children: const [
-        SizedBox(height: 120),
-        Center(child: Text('All quiet... for now 🤫')),
-      ],
-    );
-  }
-
-  Widget _buildList() {
-    return ListView.builder(
-      physics: const AlwaysScrollableScrollPhysics(),
-      itemCount: _items.length + (_hasMore ? 1 : 0),
-      itemBuilder: (context, index) {
-        if (index == _items.length) {
-          return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 16),
-            child: Center(
-              child: _isLoadingMore
-                  ? const CircularProgressIndicator()
-                  : TextButton(onPressed: _loadMore, child: const Text('Load more')),
+  Widget _buildBalanceCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(_account?.accountNumber ?? '', style: const TextStyle(color: Colors.grey)),
+            const SizedBox(height: 8),
+            Text(
+              'R ${_account?.balance.toStringAsFixed(2) ?? '0.00'}',
+              style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
             ),
-          );
-        }
-        return _buildTile(_items[index]);
-      },
+          ],
+        ),
+      ),
     );
   }
 
-  Widget _buildTile(BankNotification n) {
-    final received = n.type == 'TRANSFER_RECEIVED';
-    final alert = n.type == 'FRAUD_ALERT';
+  Widget _buildTransactionTile(BankTransaction tx) {
     return ListTile(
-      onTap: () => _markRead(n),
       leading: Icon(
-        alert
-            ? Icons.warning_amber_rounded
-            : (received ? Icons.arrow_downward : Icons.arrow_upward),
-        color: alert
-            ? Colors.orangeAccent
-            : (received ? Colors.green : Colors.redAccent),
+        tx.isCredit ? Icons.arrow_downward : Icons.arrow_upward,
+        color: tx.isCredit ? Colors.green : Colors.redAccent,
       ),
-      title: Text(
-        n.message,
-        style: TextStyle(fontWeight: n.read ? FontWeight.normal : FontWeight.bold),
+      title: Text(tx.reference ?? tx.type),
+      subtitle: Text(
+        tx.status == 'FLAGGED'
+            ? 'On hold 👀  ${tx.createdAt.toLocal()}'
+            : tx.createdAt.toLocal().toString(),
       ),
-      subtitle: Text(n.createdAt.toLocal().toString()),
-      trailing: n.read
-          ? null
-          : const Icon(Icons.circle, size: 10, color: Colors.purpleAccent),
+      trailing: Text(
+        '${tx.isCredit ? '+' : '-'}R ${tx.amount.toStringAsFixed(2)}',
+        style: TextStyle(
+          color: tx.isCredit ? Colors.green : Colors.redAccent,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     );
   }
 }
