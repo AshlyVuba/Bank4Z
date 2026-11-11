@@ -34,3 +34,7 @@ bank4z:
   admin:
     email: ${ADMIN_EMAIL:}
     password: ${ADMIN_PASSWORD:}
+  fraud:
+    large-transfer-threshold: 5000.00   # rand; at or above this a transfer is flagged for review
+    rapid-transfer-count: 5             # completed transfers allowed...
+    rapid-transfer-window-minutes: 10   # ...within this many minutes before the next is blocked

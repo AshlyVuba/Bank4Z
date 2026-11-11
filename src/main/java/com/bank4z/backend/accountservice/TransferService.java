@@ -2,12 +2,17 @@ package com.bank4z.backend.accountservice;
 
 import com.bank4z.backend.accountservice.dto.TransferRequest;
 import com.bank4z.backend.accountservice.dto.TransferResponse;
+import com.bank4z.backend.fraudservice.FraudBlockedException;
+import com.bank4z.backend.fraudservice.FraudFlag;
+import com.bank4z.backend.fraudservice.FraudService;
+import com.bank4z.backend.fraudservice.FraudVerdict;
 import com.bank4z.backend.notificationservice.NotificationService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -17,24 +22,31 @@ public class TransferService {
     private final AccountRepository accountRepository;
     private final TransactionRepository transactionRepository;
     private final NotificationService notificationService;
+    private final FraudService fraudService;
 
     public TransferService(AccountService accountService,
                            AccountRepository accountRepository,
                            TransactionRepository transactionRepository,
-                           NotificationService notificationService) {
+                           NotificationService notificationService,
+                           FraudService fraudService) {
         this.accountService = accountService;
         this.accountRepository = accountRepository;
         this.transactionRepository = transactionRepository;
         this.notificationService = notificationService;
+        this.fraudService = fraudService;
     }
 
     /**
      * Everything below runs in ONE database transaction: either both balances
      * change and both transaction rows are written, or nothing happens at all.
      *
-     * Fraud checks (B4Z-11) will plug in right before the money moves.
+     * The one deliberate exception is noRollbackFor: when a fraud rule BLOCKS a
+     * transfer we throw FraudBlockedException, and normally that would roll
+     * back everything, including the flag and the record of the attempt that
+     * we specifically want to keep. Nothing has been debited by that point,
+     * so committing is safe.
      */
-    @Transactional
+    @Transactional(noRollbackFor = FraudBlockedException.class)
     public TransferResponse transfer(UUID senderUserId, TransferRequest request) {
         // The sender comes from the authenticated user, never from the request body.
         Account senderOwn = accountService.getAccountForUser(senderUserId);
@@ -67,14 +79,29 @@ public class TransferService {
             throw new InsufficientFundsException();
         }
 
+        boolean hasNote = request.reference() != null && !request.reference().isBlank();
+        String senderRef = hasNote ? request.reference().trim() : "Transfer to " + recipientNumber;
+        String recipientRef = hasNote ? request.reference().trim() : "Transfer from " + senderNumber;
+
+        // Fraud check happens after the basic validation (no point flagging a
+        // transfer that would have failed anyway) and before any money moves.
+        Optional<FraudVerdict> verdict = fraudService.evaluate(sender, amount);
+
+        if (verdict.isPresent() && verdict.get().action() == FraudFlag.Action.BLOCKED) {
+            // Nothing is debited. Keep a record of the attempt (status FLAGGED)
+            // plus the flag itself, tell the user, then refuse.
+            Transaction attempt = new Transaction(sender, amount, Transaction.Type.TRANSFER_OUT, senderRef);
+            attempt.setStatus(Transaction.Status.FLAGGED);
+            transactionRepository.save(attempt);
+            fraudService.recordFlag(attempt, verdict.get());
+            notificationService.notifyTransferBlocked(sender.getUser(), amount, recipientNumber);
+            throw new FraudBlockedException();
+        }
+
         // Both accounts are managed entities inside this transaction, so these
         // changes are flushed automatically on commit.
         sender.setBalance(sender.getBalance().subtract(amount));
         recipient.setBalance(recipient.getBalance().add(amount));
-
-        boolean hasNote = request.reference() != null && !request.reference().isBlank();
-        String senderRef = hasNote ? request.reference().trim() : "Transfer to " + recipientNumber;
-        String recipientRef = hasNote ? request.reference().trim() : "Transfer from " + senderNumber;
 
         Transaction debit = new Transaction(sender, amount, Transaction.Type.TRANSFER_OUT, senderRef);
         debit.setStatus(Transaction.Status.COMPLETED);
@@ -91,12 +118,22 @@ public class TransferService {
         notificationService.notifyTransferSent(sender.getUser(), amount, recipientNumber);
         notificationService.notifyTransferReceived(recipient.getUser(), amount, senderNumber);
 
+        String message = "Sent! Money moved, no cap 💸";
+
+        // A verdict that reaches this point is a MEDIUM, allowed one: the
+        // transfer already happened, but an admin should take a look.
+        if (verdict.isPresent()) {
+            fraudService.recordFlag(debit, verdict.get());
+            notificationService.notifyTransferFlagged(sender.getUser(), amount, recipientNumber);
+            message += " We flagged this one for a quick safety check 👀";
+        }
+
         return new TransferResponse(
                 debit.getId(),
                 recipientNumber,
                 amount,
                 sender.getBalance(),
-                "Sent! Money moved, no cap 💸"
+                message
         );
     }
 

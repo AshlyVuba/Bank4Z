@@ -3,6 +3,8 @@ package com.bank4z.backend.common.exception;
 import com.bank4z.backend.accountservice.AccountNotFoundException;
 import com.bank4z.backend.accountservice.InsufficientFundsException;
 import com.bank4z.backend.accountservice.InvalidTransferException;
+import com.bank4z.backend.fraudservice.FraudBlockedException;
+import com.bank4z.backend.fraudservice.FraudFlagNotFoundException;
 import com.bank4z.backend.notificationservice.NotificationNotFoundException;
 import com.bank4z.backend.authservice.DuplicateUserException;
 import org.springframework.http.HttpStatus;
@@ -54,6 +56,18 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(NotificationNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleNotificationNotFound(NotificationNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(body(ex.getMessage(), null));
+    }
+
+    @ExceptionHandler(FraudBlockedException.class)
+    public ResponseEntity<Map<String, Object>> handleFraudBlocked(FraudBlockedException ex) {
+        return ResponseEntity.status(HttpStatus.FORBIDDEN)
+                .body(bodyWithCode(FraudBlockedException.CODE, ex.getMessage()));
+    }
+
+    @ExceptionHandler(FraudFlagNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleFraudFlagNotFound(FraudFlagNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(body(ex.getMessage(), null));
     }

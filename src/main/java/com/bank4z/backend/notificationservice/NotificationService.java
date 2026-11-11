@@ -35,6 +35,22 @@ public class NotificationService {
                 "Money moved! R" + amount.toPlainString() + " landed from " + senderAccountNumber + " 🤑");
     }
 
+    /** A transfer was stopped by a fraud rule. Deliberately doesn't say which rule. */
+    @Transactional
+    public void notifyTransferBlocked(User sender, BigDecimal amount, String recipientAccountNumber) {
+        create(sender, Notification.Type.FRAUD_ALERT,
+                "Hold up, this looks sus 👀 We paused your R" + amount.toPlainString()
+                        + " transfer to " + recipientAccountNumber + ". Try again in a few minutes.");
+    }
+
+    /** A transfer went through but was flagged for an admin to look at. */
+    @Transactional
+    public void notifyTransferFlagged(User sender, BigDecimal amount, String recipientAccountNumber) {
+        create(sender, Notification.Type.FRAUD_ALERT,
+                "Big move 👀 Your R" + amount.toPlainString() + " transfer to " + recipientAccountNumber
+                        + " went through, but we flagged it for a quick safety check.");
+    }
+
     @Transactional(readOnly = true)
     public Page<Notification> list(UUID userId, Pageable pageable) {
         return notificationRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable);

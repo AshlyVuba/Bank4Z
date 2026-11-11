@@ -13,6 +13,7 @@ Bank4Z isn't just "a banking app with slang slapped on it". The goal is a proper
 - [Architecture overview](#architecture-overview)
 - [Features by elective](#features-by-elective)
 - [API overview](#api-overview)
+- [Fraud detection](#fraud-detection)
 - [The Gen Z voice](#the-gen-z-voice)
 - [Running the app](#running-the-app)
 - [Running the tests](#running-the-tests)
@@ -65,10 +66,11 @@ The backend is currently a modular monolith: one deployable app, split into pack
 - SA ID validation (real date + Luhn checksum), phone and password rules
 - Money movement under pessimistic row locks (no double-spend races, no deadlocks)
 - Admin views expose the minimum data needed (no ID numbers or hashes)
+- Rule-based fraud detection on every transfer (rapid-fire transfers are blocked, large ones are flagged for admin review); customers never see the thresholds
 - Secrets via environment variables; `.env` is git-ignored
 - Automated CodeQL scan in CI
 
-Coming in Iteration 3: rule-based fraud detection, session and device management, audit logging, an OWASP ZAP pass.
+Coming in Iteration 3: session and device management (including new-device login alerts), an OWASP ZAP pass, audit logging.
 
 ### Systems Integration
 - Versioned database migrations (Flyway), validated against a real Postgres in CI
@@ -94,6 +96,8 @@ Coming in Iteration 4: message broker, a simulated external payment rail (mock P
 | POST | `/api/notifications/read-all` | user | Mark all notifications read |
 | GET | `/api/admin/users?page=&size=` | admin | List users |
 | PUT | `/api/admin/accounts/{accountNumber}/status` | admin | Freeze / unfreeze an account |
+| GET | `/api/admin/fraud-flags?resolved=&page=&size=` | admin | Review fraud flags (`resolved=false` = still open) |
+| POST | `/api/admin/fraud-flags/{id}/resolve` | admin | Mark a fraud flag as reviewed |
 
 Protected endpoints need the header `Authorization: Bearer <accessToken>`. Access tokens last 1 hour.
 
@@ -106,6 +110,23 @@ Errors share one shape. The `message` is the fun, user-facing copy; the `code` i
   "code": "INSUFFICIENT_FUNDS"
 }
 ```
+
+## Fraud detection
+
+Every transfer is checked **after** basic validation and **before** any money moves. Thresholds live in `src/main/resources/application.yml` under `bank4z.fraud`.
+
+| Rule | Triggers when (defaults) | Risk | What happens |
+|---|---|---|---|
+| `RAPID_TRANSFERS` | 5 completed transfers out of the same account within 10 minutes | HIGH | Transfer is **blocked**. Nothing is debited. The attempt is recorded (status `FLAGGED`, shown as "On hold" in the app), a flag is raised, and the user is notified. The window slides, so it clears itself. |
+| `LARGE_TRANSFER` | Amount of R5,000 or more | MEDIUM | Transfer **goes through**, a flag is raised for admin review, and the user is notified. |
+
+How it fits together:
+- A blocked transfer returns HTTP 403 with `code: FRAUD_BLOCKED` and a deliberately vague message. The exact limits stay admin-only (they're in the flag's `reason`), so an attacker can't learn the threshold to stay under it.
+- The sender's account row is locked first, so two simultaneous transfers can't both slip under the rapid-transfer limit.
+- Admins review flags with `GET /api/admin/fraud-flags?resolved=false` and close them with `POST /api/admin/fraud-flags/{id}/resolve`.
+- Coming in B4Z-12: a new-device-login rule (needs device tracking first).
+
+To try it: send R1.00 to another account six times in a row. The sixth is blocked. To try the large-transfer rule, give the sender R6,000 in pgAdmin and send R5,000.
 
 ## The Gen Z voice
 
@@ -123,12 +144,13 @@ Every user-facing message gets rewritten in-voice. Rule of thumb: **the underlyi
 | Account created | "Your account has been created" | "Welcome to the plug 🔌 you're in" |
 | Money received | "Credit received" | "Money moved! R40.50 landed from 4Z... 🤑" |
 | Empty notifications | "No notifications" | "All quiet... for now 🤫" |
+| Transfer blocked by fraud rule | "Transaction declined: suspected fraud" | "Hold up, this looks sus 👀 We paused that transfer to keep your money safe." |
+| Large transfer flagged | "Transaction flagged for review" | "Big move 👀 ... went through, but we flagged it for a quick safety check." |
 
-Planned for the fraud and session work (Iteration 3):
+Planned for the session and device work (Iteration 3):
 
 | Situation | Bank4Z voice |
 |---|---|
-| Suspicious activity flagged | "Hold up, this looks sus 👀 verify it's you" |
 | Login from new device | "New phone who dis 📱 confirm it's really you" |
 | Daily limit reached | "Slow down bestie, you hit your daily cap" |
 
@@ -342,7 +364,7 @@ Bank4Z/
 │   │   │   ├── accountservice/       (accounts, transactions, transfers)
 │   │   │   ├── notificationservice/  (in-app notifications)
 │   │   │   ├── adminservice/         (admin endpoints, first-admin bootstrap)
-│   │   │   ├── fraudservice/         (Iteration 3)
+│   │   │   ├── fraudservice/         (fraud rules, flags, admin review)
 │   │   │   └── common/               (config, security, exceptions, validation)
 │   │   └── resources/
 │   │       ├── application.yml
@@ -361,7 +383,7 @@ Bank4Z/
 |---|---|---|
 | 1 | Foundation and auth (B4Z-01 to 05) | Done |
 | 2 | Core banking: accounts, history, transfers, notifications (B4Z-06 to 09) | Done |
-| 3 | Cyber Security layer: RBAC (B4Z-10) done; fraud detection, sessions/devices, security testing, audit logging next (B4Z-11 to 14) | In progress |
+| 3 | Cyber Security layer: RBAC (B4Z-10) and fraud detection (B4Z-11) done; sessions/devices, security testing, audit logging next (B4Z-12 to 14) | In progress |
 | 4 | Systems Integration: message broker, mock payment rail, notification consumer (B4Z-15 to 18) | Planned |
 | 5 | Polish, end-to-end testing, documentation, demo (B4Z-19 to 23) | Planned |
 

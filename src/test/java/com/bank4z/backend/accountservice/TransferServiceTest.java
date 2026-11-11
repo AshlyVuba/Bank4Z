@@ -3,6 +3,10 @@ package com.bank4z.backend.accountservice;
 import com.bank4z.backend.accountservice.dto.TransferRequest;
 import com.bank4z.backend.accountservice.dto.TransferResponse;
 import com.bank4z.backend.authservice.User;
+import com.bank4z.backend.fraudservice.FraudBlockedException;
+import com.bank4z.backend.fraudservice.FraudFlag;
+import com.bank4z.backend.fraudservice.FraudService;
+import com.bank4z.backend.fraudservice.FraudVerdict;
 import com.bank4z.backend.notificationservice.NotificationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +22,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -33,6 +38,7 @@ class TransferServiceTest {
     @Mock AccountRepository accountRepository;
     @Mock TransactionRepository transactionRepository;
     @Mock NotificationService notificationService;
+    @Mock FraudService fraudService; // unstubbed: Mockito returns Optional.empty() = "nothing suspicious"
     @InjectMocks TransferService transferService;
 
     private final UUID senderUserId = UUID.randomUUID();
@@ -119,5 +125,49 @@ class TransferServiceTest {
                 .isInstanceOf(AccountNotFoundException.class);
 
         verify(transactionRepository, never()).save(any(Transaction.class));
+    }
+
+    @Test
+    void blocksTransferAndRecordsTheAttemptWhenAFraudRuleSaysSo() {
+        stubLookups();
+        sender.setBalance(new BigDecimal("100.00"));
+        FraudVerdict verdict = new FraudVerdict(
+                FraudFlag.Rule.RAPID_TRANSFERS, FraudFlag.RiskLevel.HIGH, FraudFlag.Action.BLOCKED, "test");
+        when(fraudService.evaluate(any(Account.class), any(BigDecimal.class))).thenReturn(Optional.of(verdict));
+
+        assertThatThrownBy(() -> transferService.transfer(
+                senderUserId, new TransferRequest(RECIPIENT_NUMBER, new BigDecimal("40.50"), null)))
+                .isInstanceOf(FraudBlockedException.class);
+
+        // no money moved
+        assertThat(sender.getBalance()).isEqualByComparingTo("100.00");
+        assertThat(recipient.getBalance()).isEqualByComparingTo("0.00");
+
+        // but the attempt (status FLAGGED) and the flag were recorded, and the user was told
+        verify(transactionRepository, times(1)).save(any(Transaction.class));
+        verify(fraudService).recordFlag(any(Transaction.class), eq(verdict));
+        verify(notificationService).notifyTransferBlocked(sender.getUser(), new BigDecimal("40.50"), RECIPIENT_NUMBER);
+        verify(notificationService, never()).notifyTransferSent(any(), any(), any());
+    }
+
+    @Test
+    void allowsLargeTransferButFlagsItForReview() {
+        stubLookups();
+        sender.setBalance(new BigDecimal("9000.00"));
+        FraudVerdict verdict = new FraudVerdict(
+                FraudFlag.Rule.LARGE_TRANSFER, FraudFlag.RiskLevel.MEDIUM, FraudFlag.Action.ALLOWED, "test");
+        when(fraudService.evaluate(any(Account.class), any(BigDecimal.class))).thenReturn(Optional.of(verdict));
+
+        TransferResponse response = transferService.transfer(
+                senderUserId, new TransferRequest(RECIPIENT_NUMBER, new BigDecimal("6000.00"), null));
+
+        // the money moved...
+        assertThat(sender.getBalance()).isEqualByComparingTo("3000.00");
+        assertThat(recipient.getBalance()).isEqualByComparingTo("6000.00");
+
+        // ...and it was flagged for an admin, with the user informed
+        verify(fraudService).recordFlag(any(Transaction.class), eq(verdict));
+        verify(notificationService).notifyTransferFlagged(sender.getUser(), new BigDecimal("6000.00"), RECIPIENT_NUMBER);
+        assertThat(response.message()).contains("safety check");
     }
 }

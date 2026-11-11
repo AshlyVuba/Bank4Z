@@ -1,25 +1,20 @@
 import 'package:flutter/material.dart';
-import '../services/auth_service.dart';
-import '../services/account_service.dart';
+import '../models/bank_notification.dart';
+import '../services/auth_service.dart'; // for ApiException
 import '../services/notification_service.dart';
-import '../models/account.dart';
-import '../models/transaction.dart';
 
-class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+class NotificationsScreen extends StatefulWidget {
+  const NotificationsScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  State<NotificationsScreen> createState() => _NotificationsScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _NotificationsScreenState extends State<NotificationsScreen> {
   static const int _pageSize = 20;
 
-  final _accountService = AccountService();
-  final _notificationService = NotificationService();
-  int _unreadCount = 0;
-  Account? _account;
-  final List<BankTransaction> _transactions = [];
+  final _service = NotificationService();
+  final List<BankNotification> _items = [];
 
   int _page = 0;
   bool _hasMore = true;
@@ -40,22 +35,13 @@ class _HomeScreenState extends State<HomeScreen> {
     });
 
     try {
-      final account = await _accountService.getMyAccount();
-      final transactions = await _accountService.getMyTransactions(page: 0, size: _pageSize);
-      var unread = 0;
-      try {
-        unread = await _notificationService.getUnreadCount();
-      } catch (_) {
-        // A notification hiccup shouldn't take down the whole dashboard.
-      }
+      final items = await _service.getNotifications(page: 0, size: _pageSize);
       setState(() {
-        _account = account;
-        _unreadCount = unread;
-        _transactions
+        _items
           ..clear()
-          ..addAll(transactions);
+          ..addAll(items);
         _page = 0;
-        _hasMore = transactions.length == _pageSize;
+        _hasMore = items.length == _pageSize;
       });
     } on ApiException catch (e) {
       setState(() => _error = e.message);
@@ -72,66 +58,60 @@ class _HomeScreenState extends State<HomeScreen> {
 
     try {
       final nextPage = _page + 1;
-      final transactions = await _accountService.getMyTransactions(page: nextPage, size: _pageSize);
+      final items = await _service.getNotifications(page: nextPage, size: _pageSize);
       setState(() {
-        _transactions.addAll(transactions);
+        _items.addAll(items);
         _page = nextPage;
-        _hasMore = transactions.length == _pageSize;
+        _hasMore = items.length == _pageSize;
       });
     } catch (_) {
-      // "Load more" fails silently — the user still has their existing data
-      // on screen, so no need to interrupt them for a background fetch.
+      // Silent: the user already has data on screen.
     } finally {
       if (mounted) setState(() => _isLoadingMore = false);
     }
   }
 
-  Future<void> _openNotifications() async {
-    await Navigator.pushNamed(context, '/notifications');
-    _refreshUnreadCount(); // badge should reflect anything read while away
-  }
-
-  Future<void> _refreshUnreadCount() async {
+  Future<void> _markRead(BankNotification n) async {
+    if (n.read) return;
+    setState(() => n.read = true); // optimistic: feels instant
     try {
-      final unread = await _notificationService.getUnreadCount();
-      if (mounted) setState(() => _unreadCount = unread);
+      await _service.markAsRead(n.id);
     } catch (_) {
-      // keep the old badge if this fails
+      if (mounted) setState(() => n.read = false); // roll back if it failed
     }
   }
 
-  Future<void> _openTransfer() async {
-    final sent = await Navigator.pushNamed(context, '/transfer');
-    if (sent == true) _loadInitial();
+  Future<void> _markAllRead() async {
+    try {
+      await _service.markAllAsRead();
+      if (!mounted) return;
+      setState(() {
+        for (final n in _items) {
+          n.read = true;
+        }
+      });
+    } on ApiException catch (e) {
+      _showError(e.message);
+    } catch (_) {
+      _showError('Couldn\'t reach the server. Check your connection.');
+    }
   }
 
-  Future<void> _handleLogout() async {
-    await AuthService().logout();
-    if (!mounted) return;
-    Navigator.pushReplacementNamed(context, '/login');
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
   Widget build(BuildContext context) {
+    final hasUnread = _items.any((n) => !n.read);
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Bank4Z'),
+        title: const Text('Notifications'),
         actions: [
-          IconButton(
-            icon: Badge(
-              isLabelVisible: _unreadCount > 0,
-              label: Text('$_unreadCount'),
-              child: const Icon(Icons.notifications_outlined),
-            ),
-            onPressed: _openNotifications,
-          ),
-          IconButton(icon: const Icon(Icons.logout), onPressed: _handleLogout),
+          if (hasUnread)
+            TextButton(onPressed: _markAllRead, child: const Text('Mark all read')),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _openTransfer,
-        icon: const Icon(Icons.send),
-        label: const Text('Send money'),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -139,34 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
           ? _buildError()
           : RefreshIndicator(
         onRefresh: _loadInitial,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
-          children: [
-            _buildBalanceCard(),
-            const SizedBox(height: 24),
-            const Text(
-              'Recent activity',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            if (_transactions.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 32),
-                child: Center(child: Text('Nothing here yet — go make some moves 💸')),
-              )
-            else
-              ..._transactions.map(_buildTransactionTile),
-            if (_hasMore)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Center(
-                  child: _isLoadingMore
-                      ? const CircularProgressIndicator()
-                      : TextButton(onPressed: _loadMore, child: const Text('Load more')),
-                ),
-              ),
-          ],
-        ),
+        child: _items.isEmpty ? _buildEmpty() : _buildList(),
       ),
     );
   }
@@ -187,40 +140,58 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildBalanceCard() {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(_account?.accountNumber ?? '', style: const TextStyle(color: Colors.grey)),
-            const SizedBox(height: 8),
-            Text(
-              'R ${_account?.balance.toStringAsFixed(2) ?? '0.00'}',
-              style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-            ),
-          ],
-        ),
-      ),
+  Widget _buildEmpty() {
+    // A scrollable, so pull-to-refresh still works on an empty list
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      children: const [
+        SizedBox(height: 120),
+        Center(child: Text('All quiet... for now 🤫')),
+      ],
     );
   }
 
-  Widget _buildTransactionTile(BankTransaction tx) {
+  Widget _buildList() {
+    return ListView.builder(
+      physics: const AlwaysScrollableScrollPhysics(),
+      itemCount: _items.length + (_hasMore ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index == _items.length) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Center(
+              child: _isLoadingMore
+                  ? const CircularProgressIndicator()
+                  : TextButton(onPressed: _loadMore, child: const Text('Load more')),
+            ),
+          );
+        }
+        return _buildTile(_items[index]);
+      },
+    );
+  }
+
+  Widget _buildTile(BankNotification n) {
+    final received = n.type == 'TRANSFER_RECEIVED';
+    final alert = n.type == 'FRAUD_ALERT';
     return ListTile(
+      onTap: () => _markRead(n),
       leading: Icon(
-        tx.isCredit ? Icons.arrow_downward : Icons.arrow_upward,
-        color: tx.isCredit ? Colors.green : Colors.redAccent,
+        alert
+            ? Icons.warning_amber_rounded
+            : (received ? Icons.arrow_downward : Icons.arrow_upward),
+        color: alert
+            ? Colors.orangeAccent
+            : (received ? Colors.green : Colors.redAccent),
       ),
-      title: Text(tx.reference ?? tx.type),
-      subtitle: Text(tx.createdAt.toLocal().toString()),
-      trailing: Text(
-        '${tx.isCredit ? '+' : '-'}R ${tx.amount.toStringAsFixed(2)}',
-        style: TextStyle(
-          color: tx.isCredit ? Colors.green : Colors.redAccent,
-          fontWeight: FontWeight.bold,
-        ),
+      title: Text(
+        n.message,
+        style: TextStyle(fontWeight: n.read ? FontWeight.normal : FontWeight.bold),
       ),
+      subtitle: Text(n.createdAt.toLocal().toString()),
+      trailing: n.read
+          ? null
+          : const Icon(Icons.circle, size: 10, color: Colors.purpleAccent),
     );
   }
 }

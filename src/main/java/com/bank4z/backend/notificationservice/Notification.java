@@ -10,7 +10,7 @@ import java.util.UUID;
 @Table(name = "notifications")
 public class Notification extends BaseAuditableEntity {
 
-    public enum Type { TRANSFER_SENT, TRANSFER_RECEIVED }
+    public enum Type { TRANSFER_SENT, TRANSFER_RECEIVED, FRAUD_ALERT }
 
     @Id
     @GeneratedValue

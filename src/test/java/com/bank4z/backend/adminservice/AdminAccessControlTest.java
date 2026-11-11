@@ -5,6 +5,8 @@ import com.bank4z.backend.common.config.SecurityConfig;
 import com.bank4z.backend.common.security.JsonAccessDeniedHandler;
 import com.bank4z.backend.common.security.JsonAuthenticationEntryPoint;
 import com.bank4z.backend.common.security.JwtService;
+import com.bank4z.backend.fraudservice.FraudAdminController;
+import com.bank4z.backend.fraudservice.FraudService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -22,6 +24,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -30,7 +33,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Loads only the web layer plus our real SecurityConfig, so these tests
  * exercise the actual access rules without needing a database.
  */
-@WebMvcTest(AdminController.class)
+@WebMvcTest({AdminController.class, FraudAdminController.class})
 @Import({SecurityConfig.class, JsonAuthenticationEntryPoint.class, JsonAccessDeniedHandler.class})
 class AdminAccessControlTest {
 
@@ -41,6 +44,19 @@ class AdminAccessControlTest {
     // Wired into the security setup, so the test context needs stand-ins
     @MockBean JwtService jwtService;
     @MockBean CustomUserDetailsService customUserDetailsService;
+    @MockBean FraudService fraudService;
+
+    @Test
+    @WithMockUser(roles = "USER")
+    void regularUserCannotViewOrResolveFraudFlags() throws Exception {
+        mockMvc.perform(get("/api/admin/fraud-flags"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/admin/fraud-flags/00000000-0000-0000-0000-000000000001/resolve"))
+                .andExpect(status().isForbidden());
+
+        verifyNoInteractions(fraudService);
+    }
 
     @Test
     void anonymousRequestIsRejectedWith401() throws Exception {
