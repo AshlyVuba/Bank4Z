@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../models/device_session.dart';
 import '../services/auth_service.dart'; // for ApiException
 import '../services/session_service.dart';

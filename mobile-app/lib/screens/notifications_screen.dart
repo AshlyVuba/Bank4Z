@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../models/bank_notification.dart';
 import '../services/auth_service.dart'; // for ApiException
 import '../services/notification_service.dart';
