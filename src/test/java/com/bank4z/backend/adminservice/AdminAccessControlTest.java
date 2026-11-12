@@ -7,6 +7,7 @@ import com.bank4z.backend.common.security.JsonAuthenticationEntryPoint;
 import com.bank4z.backend.common.security.JwtService;
 import com.bank4z.backend.fraudservice.FraudAdminController;
 import com.bank4z.backend.fraudservice.FraudService;
+import com.bank4z.backend.sessionservice.SessionService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -45,6 +46,7 @@ class AdminAccessControlTest {
     @MockBean JwtService jwtService;
     @MockBean CustomUserDetailsService customUserDetailsService;
     @MockBean FraudService fraudService;
+    @MockBean SessionService sessionService; // the JWT filter checks sessions now
 
     @Test
     @WithMockUser(roles = "USER")

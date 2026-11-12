@@ -173,11 +173,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   Widget _buildTile(BankNotification n) {
     final received = n.type == 'TRANSFER_RECEIVED';
+    final alert = n.type == 'FRAUD_ALERT' || n.type == 'NEW_DEVICE_LOGIN';
     return ListTile(
       onTap: () => _markRead(n),
       leading: Icon(
-        received ? Icons.arrow_downward : Icons.arrow_upward,
-        color: received ? Colors.green : Colors.redAccent,
+        alert
+            ? Icons.warning_amber_rounded
+            : (received ? Icons.arrow_downward : Icons.arrow_upward),
+        color: alert
+            ? Colors.orangeAccent
+            : (received ? Colors.green : Colors.redAccent),
       ),
       title: Text(
         n.message,

@@ -14,6 +14,7 @@ Bank4Z isn't just "a banking app with slang slapped on it". The goal is a proper
 - [Features by elective](#features-by-elective)
 - [API overview](#api-overview)
 - [Fraud detection](#fraud-detection)
+- [Sessions and devices](#sessions-and-devices)
 - [The Gen Z voice](#the-gen-z-voice)
 - [Running the app](#running-the-app)
 - [Running the tests](#running-the-tests)
@@ -66,11 +67,14 @@ The backend is currently a modular monolith: one deployable app, split into pack
 - SA ID validation (real date + Luhn checksum), phone and password rules
 - Money movement under pessimistic row locks (no double-spend races, no deadlocks)
 - Admin views expose the minimum data needed (no ID numbers or hashes)
+- Server-side login sessions: list your devices, log out one device or all others, and a revoked device stops working immediately
+- Refresh token rotation with reuse detection: every refresh token works once; replaying an old one ends the whole session
+- "New phone who dis" alerts when someone logs in from a device you haven't used before
 - Rule-based fraud detection on every transfer (rapid-fire transfers are blocked, large ones are flagged for admin review); customers never see the thresholds
 - Secrets via environment variables; `.env` is git-ignored
 - Automated CodeQL scan in CI
 
-Coming in Iteration 3: session and device management (including new-device login alerts), an OWASP ZAP pass, audit logging.
+Coming in Iteration 3: an OWASP ZAP pass and audit logging.
 
 ### Systems Integration
 - Versioned database migrations (Flyway), validated against a real Postgres in CI
@@ -86,7 +90,7 @@ Coming in Iteration 4: message broker, a simulated external payment rail (mock P
 |---|---|---|---|
 | POST | `/api/auth/register` | public | Create an account (a bank account is created automatically) |
 | POST | `/api/auth/login` | public | Get access + refresh tokens |
-| POST | `/api/auth/refresh` | public | Swap a refresh token for new tokens |
+| POST | `/api/auth/refresh` | public | Swap a refresh token for new tokens (the old refresh token stops working) |
 | GET | `/api/accounts/me` | user | Balance and account details |
 | GET | `/api/accounts/me/transactions?page=&size=` | user | Paginated transaction history |
 | POST | `/api/transfers` | user | Send money to another Bank4Z account |
@@ -94,12 +98,16 @@ Coming in Iteration 4: message broker, a simulated external payment rail (mock P
 | GET | `/api/notifications/unread-count` | user | Unread badge count |
 | POST | `/api/notifications/{id}/read` | user | Mark one notification read |
 | POST | `/api/notifications/read-all` | user | Mark all notifications read |
+| GET | `/api/sessions` | user | List your active devices (`current` marks this one) |
+| DELETE | `/api/sessions/current` | user | Log out this device |
+| DELETE | `/api/sessions/{id}` | user | Log out one specific device |
+| POST | `/api/sessions/revoke-others` | user | Log out every other device |
 | GET | `/api/admin/users?page=&size=` | admin | List users |
 | PUT | `/api/admin/accounts/{accountNumber}/status` | admin | Freeze / unfreeze an account |
 | GET | `/api/admin/fraud-flags?resolved=&page=&size=` | admin | Review fraud flags (`resolved=false` = still open) |
 | POST | `/api/admin/fraud-flags/{id}/resolve` | admin | Mark a fraud flag as reviewed |
 
-Protected endpoints need the header `Authorization: Bearer <accessToken>`. Access tokens last 1 hour.
+Protected endpoints need the header `Authorization: Bearer <accessToken>`. Access tokens last 1 hour. `POST /api/auth/login` also accepts optional `deviceId` and `deviceName` fields; without them the login shows up as "Unknown device".
 
 Errors share one shape. The `message` is the fun, user-facing copy; the `code` is the stable, formal identifier:
 
@@ -124,9 +132,38 @@ How it fits together:
 - A blocked transfer returns HTTP 403 with `code: FRAUD_BLOCKED` and a deliberately vague message. The exact limits stay admin-only (they're in the flag's `reason`), so an attacker can't learn the threshold to stay under it.
 - The sender's account row is locked first, so two simultaneous transfers can't both slip under the rapid-transfer limit.
 - Admins review flags with `GET /api/admin/fraud-flags?resolved=false` and close them with `POST /api/admin/fraud-flags/{id}/resolve`.
-- Coming in B4Z-12: a new-device-login rule (needs device tracking first).
+- New-device logins are handled by session management (see below); they alert the user but don't block.
 
 To try it: send R1.00 to another account six times in a row. The sixth is blocked. To try the large-transfer rule, give the sender R6,000 in pgAdmin and send R5,000.
+
+## Sessions and devices
+
+Every login creates a **session** on the server (one row per login, tied to a device). Both tokens carry the session id, and every authenticated request checks that the session is still active. That is what makes "log out that device" work straight away, instead of the token staying usable for up to an hour.
+
+- **Devices screen** (app) / `GET /api/sessions`: see where you're logged in, log out one device, or log out all the others.
+- **Refresh token rotation:** each refresh hands out a new refresh token and retires the old one. If an old one is ever presented again (a bug or a stolen token), the entire session is revoked.
+- **New-device alert:** the app generates a random device id once per install. A login from an id the user has never used before (after their first login) creates a "New phone who dis 📱" notification.
+- **Not trusted:** device names are cleaned (control characters stripped, length capped) and the IP is the address the server actually sees, never the forgeable `X-Forwarded-For` header.
+
+Try it in PowerShell (two "devices" for the same user):
+
+```powershell
+$body = '{"email":"alex@example.com","password":"Passw0rdTest","deviceId":"phone-1","deviceName":"Alex Pixel"}'
+$phone = Invoke-RestMethod -Method Post -Uri "$api/auth/login" -ContentType "application/json" -Body $body
+
+$body = '{"email":"alex@example.com","password":"Passw0rdTest","deviceId":"laptop-1","deviceName":"Alex Laptop"}'
+$laptop = Invoke-RestMethod -Method Post -Uri "$api/auth/login" -ContentType "application/json" -Body $body
+# the second login created a "New phone who dis" notification for Alex
+
+$laptopHeaders = @{ Authorization = "Bearer $($laptop.accessToken)" }
+Invoke-RestMethod -Uri "$api/sessions" -Headers $laptopHeaders                                 # both devices listed
+Invoke-RestMethod -Method Post -Uri "$api/sessions/revoke-others" -Headers $laptopHeaders      # log out the phone
+
+# the phone's token (still unexpired) is now rejected straight away:
+try { Invoke-RestMethod -Uri "$api/accounts/me" -Headers @{ Authorization = "Bearer $($phone.accessToken)" } } catch { $_.ErrorDetails.Message }
+```
+
+Tokens issued before this feature existed have no session, so they stop working: log in again once after updating.
 
 ## The Gen Z voice
 
@@ -146,12 +183,13 @@ Every user-facing message gets rewritten in-voice. Rule of thumb: **the underlyi
 | Empty notifications | "No notifications" | "All quiet... for now 🤫" |
 | Transfer blocked by fraud rule | "Transaction declined: suspected fraud" | "Hold up, this looks sus 👀 We paused that transfer to keep your money safe." |
 | Large transfer flagged | "Transaction flagged for review" | "Big move 👀 ... went through, but we flagged it for a quick safety check." |
+| Login from a new device | "New device login detected" | "New phone who dis 📱 Someone just logged in on ... Not you? Open Devices and log out other devices." |
+| Session ended | "Session expired" | "Session ended, log back in bestie" |
 
-Planned for the session and device work (Iteration 3):
+Still planned:
 
 | Situation | Bank4Z voice |
 |---|---|
-| Login from new device | "New phone who dis 📱 confirm it's really you" |
 | Daily limit reached | "Slow down bestie, you hit your daily cap" |
 
 **Guardrails (worth saying out loud in a demo):**
@@ -340,6 +378,7 @@ The same checks run automatically on every push and pull request via GitHub Acti
 | PowerShell: `Cannot bind parameter 'Headers'` | `curl` is an alias for `Invoke-WebRequest`. Use `curl.exe` or `Invoke-RestMethod` with `-Headers @{ ... }`. |
 | App works in PowerShell but not on the Android emulator | The emulator can't see your `localhost`. Use `http://10.0.2.2:8080/api`. |
 | Everything worked, then 401s after about an hour | The access token expired. Log in again (silent token refresh in the app is not built yet). |
+| Suddenly 401 on a device that was working | That device's session was ended (logged out from another device, or a reused refresh token was detected). Log in again. Also expected once after upgrading to sessions: old tokens have no session. |
 
 ## Project structure
 
@@ -353,9 +392,9 @@ Bank4Z/
 │   └── lib/
 │       ├── main.dart
 │       ├── config/        (API base URL)
-│       ├── models/        (account, transaction, transfer result, notification)
-│       ├── services/      (auth, account, notification API clients)
-│       └── screens/       (login, register, home, transfer, notifications)
+│       ├── models/        (account, transaction, transfer result, notification, device session)
+│       ├── services/      (auth, account, notification, session API clients)
+│       └── screens/       (login, register, home, transfer, notifications, devices)
 ├── src/
 │   ├── main/
 │   │   ├── java/com/bank4z/backend/
@@ -364,11 +403,12 @@ Bank4Z/
 │   │   │   ├── accountservice/       (accounts, transactions, transfers)
 │   │   │   ├── notificationservice/  (in-app notifications)
 │   │   │   ├── adminservice/         (admin endpoints, first-admin bootstrap)
+│   │   │   ├── sessionservice/       (login sessions, devices, refresh rotation)
 │   │   │   ├── fraudservice/         (fraud rules, flags, admin review)
 │   │   │   └── common/               (config, security, exceptions, validation)
 │   │   └── resources/
 │   │       ├── application.yml
-│   │       └── db/migration/         (V1 schema, V2 phone number, V3 notifications)
+│   │       └── db/migration/         (V1 schema, V2 phone number, V3 notifications, V4 fraud flags, V5 sessions)
 │   └── test/java/...                 (unit and web-layer security tests)
 ├── Dockerfile
 ├── docker-compose.yml
@@ -383,7 +423,7 @@ Bank4Z/
 |---|---|---|
 | 1 | Foundation and auth (B4Z-01 to 05) | Done |
 | 2 | Core banking: accounts, history, transfers, notifications (B4Z-06 to 09) | Done |
-| 3 | Cyber Security layer: RBAC (B4Z-10) and fraud detection (B4Z-11) done; sessions/devices, security testing, audit logging next (B4Z-12 to 14) | In progress |
+| 3 | Cyber Security layer: RBAC (B4Z-10), fraud detection (B4Z-11) and sessions/devices (B4Z-12) done; security testing and audit logging next (B4Z-13 to 14) | In progress |
 | 4 | Systems Integration: message broker, mock payment rail, notification consumer (B4Z-15 to 18) | Planned |
 | 5 | Polish, end-to-end testing, documentation, demo (B4Z-19 to 23) | Planned |
 

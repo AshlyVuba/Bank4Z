@@ -12,8 +12,16 @@ public class UserPrincipal implements UserDetails {
 
     private final User user;
 
+    /** Which login session this request's token belongs to. Null outside of token-authenticated requests. */
+    private final UUID sessionId;
+
     public UserPrincipal(User user) {
+        this(user, null);
+    }
+
+    public UserPrincipal(User user, UUID sessionId) {
         this.user = user;
+        this.sessionId = sessionId;
     }
 
     public UUID getId() {
@@ -22,6 +30,10 @@ public class UserPrincipal implements UserDetails {
 
     public User getUser() {
         return user;
+    }
+
+    public UUID getSessionId() {
+        return sessionId;
     }
 
     @Override

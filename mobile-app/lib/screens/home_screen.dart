@@ -125,6 +125,11 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             onPressed: _openNotifications,
           ),
+          IconButton(
+            icon: const Icon(Icons.devices_outlined),
+            tooltip: 'Devices',
+            onPressed: () => Navigator.pushNamed(context, '/devices'),
+          ),
           IconButton(icon: const Icon(Icons.logout), onPressed: _handleLogout),
         ],
       ),

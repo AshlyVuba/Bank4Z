@@ -6,6 +6,7 @@ import com.bank4z.backend.accountservice.InvalidTransferException;
 import com.bank4z.backend.fraudservice.FraudBlockedException;
 import com.bank4z.backend.fraudservice.FraudFlagNotFoundException;
 import com.bank4z.backend.notificationservice.NotificationNotFoundException;
+import com.bank4z.backend.sessionservice.SessionNotFoundException;
 import com.bank4z.backend.authservice.DuplicateUserException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -68,6 +69,12 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(FraudFlagNotFoundException.class)
     public ResponseEntity<Map<String, Object>> handleFraudFlagNotFound(FraudFlagNotFoundException ex) {
+        return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(body(ex.getMessage(), null));
+    }
+
+    @ExceptionHandler(SessionNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleSessionNotFound(SessionNotFoundException ex) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND)
                 .body(body(ex.getMessage(), null));
     }

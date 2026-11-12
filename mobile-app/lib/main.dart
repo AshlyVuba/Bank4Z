@@ -4,6 +4,7 @@ import 'screens/register_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/transfer_screen.dart';
 import 'screens/notifications_screen.dart';
+import 'screens/devices_screen.dart';
 import 'services/auth_service.dart';
 
 void main() {
@@ -31,6 +32,7 @@ class Bank4ZApp extends StatelessWidget {
         '/home': (context) => const HomeScreen(),
         '/transfer': (context) => const TransferScreen(),
         '/notifications': (context) => const NotificationsScreen(),
+        '/devices': (context) => const DevicesScreen(),
       },
     );
   }

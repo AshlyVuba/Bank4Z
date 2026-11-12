@@ -10,6 +10,7 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.UUID;
 import java.util.function.Function;
 
 @Component
@@ -28,31 +29,54 @@ public class JwtService {
         this.refreshTokenExpiryMs = refreshTokenExpiryMs;
     }
 
-    public String generateAccessToken(User user) {
-        return buildToken(user, accessTokenExpiryMs, "access");
+    /** Access tokens carry the session id ("sid") so the server can check the session is still active. */
+    public String generateAccessToken(User user, UUID sessionId) {
+        return buildToken(user, sessionId, null, accessTokenExpiryMs, "access");
     }
 
-    public String generateRefreshToken(User user) {
-        return buildToken(user, refreshTokenExpiryMs, "refresh");
+    /**
+     * Refresh tokens also carry a unique token id ("jti"). The session remembers
+     * the one jti that is currently valid, which is what makes rotation and
+     * reuse detection possible.
+     */
+    public String generateRefreshToken(User user, UUID sessionId, UUID tokenId) {
+        return buildToken(user, sessionId, tokenId, refreshTokenExpiryMs, "refresh");
     }
 
-    private String buildToken(User user, long expiryMs, String tokenType) {
+    private String buildToken(User user, UUID sessionId, UUID tokenId, long expiryMs, String tokenType) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expiryMs);
 
-        return Jwts.builder()
+        var builder = Jwts.builder()
                 .subject(user.getEmail())
                 .claim("userId", user.getId().toString())
                 .claim("role", user.getRole().name())
+                .claim("sid", sessionId.toString())
                 .claim("type", tokenType)
                 .issuedAt(now)
-                .expiration(expiry)
-                .signWith(signingKey)
-                .compact();
+                .expiration(expiry);
+
+        if (tokenId != null) {
+            builder.id(tokenId.toString());
+        }
+
+        return builder.signWith(signingKey).compact();
     }
 
     public String extractEmail(String token) {
         return extractClaim(token, Claims::getSubject);
+    }
+
+    /** Null if the token has no session id (e.g. issued before sessions existed). */
+    public UUID extractSessionId(String token) {
+        String sid = extractClaim(token, claims -> claims.get("sid", String.class));
+        return sid == null ? null : UUID.fromString(sid);
+    }
+
+    /** Null for access tokens, which have no jti. */
+    public UUID extractTokenId(String token) {
+        String jti = extractClaim(token, Claims::getId);
+        return jti == null ? null : UUID.fromString(jti);
     }
 
     /**

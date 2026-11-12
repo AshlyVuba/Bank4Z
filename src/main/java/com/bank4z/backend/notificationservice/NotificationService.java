@@ -35,6 +35,14 @@ public class NotificationService {
                 "Money moved! R" + amount.toPlainString() + " landed from " + senderAccountNumber + " 🤑");
     }
 
+    /** Someone logged in from a device this user has never used before. */
+    @Transactional
+    public void notifyNewDeviceLogin(User user, String deviceName) {
+        create(user, Notification.Type.NEW_DEVICE_LOGIN,
+                "New phone who dis 📱 Someone just logged in on " + deviceName
+                        + ". Not you? Open Devices and log out other devices.");
+    }
+
     /** A transfer was stopped by a fraud rule. Deliberately doesn't say which rule. */
     @Transactional
     public void notifyTransferBlocked(User sender, BigDecimal amount, String recipientAccountNumber) {
