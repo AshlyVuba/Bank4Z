@@ -336,15 +336,32 @@ flutter pub get
 flutter run
 ```
 
-Start an Android emulator (or connect a device with USB debugging) first, and confirm `flutter devices` lists it.
+**First time only: generate the platform folders.** The repo holds the app's code, not the generated `android/` / `windows/` folders, so Flutter reports "No supported devices". Run this once from inside `mobile-app/` for the platform you'll use (commit first, so `git status` shows exactly what it added):
 
-The app's API address is set in `mobile-app/lib/config/api_config.dart`:
+```powershell
+# Windows desktop (fastest; needs Visual Studio 2022 with the "Desktop development with C++" workload
+# PLUS the "C++ ATL for latest build tools (x86 & x64)" component, see Troubleshooting)
+flutter create --platforms=windows --project-name bank4z --org com.bank4z .
+
+# Android emulator (needs Android Studio and a virtual device)
+flutter create --platforms=android --project-name bank4z --org com.bank4z .
+```
+
+Then:
+- **Delete `mobile-app/test/widget_test.dart`** if it was generated. It's a template test that refers to a `MyApp` class this project doesn't have, and it fails `flutter analyze` in CI.
+- **Windows:** turn on Developer Mode (`start ms-settings:developers`), which Flutter needs for plugins. Then `flutter run -d windows`.
+- **Android:** start an emulator from Android Studio's Device Manager, check `flutter devices` lists it, then `flutter run`. The backend is plain `http://`, and Android blocks that by default, so for local development add `android:usesCleartextTraffic="true"` to the `<application>` tag in `android/app/src/main/AndroidManifest.xml`. Remove it for any real release, which must use HTTPS.
+- Run `flutter doctor` any time to see which of these toolchains is ready.
+
+Chrome and Edge are not supported targets for this app (the backend has no CORS rules and the secure-storage story on the web is weaker).
+
+The app picks its API address automatically (see `mobile-app/lib/config/api_config.dart`):
 
 | Where the app runs | Base URL |
 |---|---|
-| Android emulator | `http://10.0.2.2:8080/api` (default) |
-| iOS simulator | `http://localhost:8080/api` |
-| Physical phone | `http://<your-computer's-LAN-IP>:8080/api` (same Wi-Fi) |
+| Android emulator | `http://10.0.2.2:8080/api` |
+| Windows desktop / iOS simulator | `http://localhost:8080/api` |
+| Physical phone | run with `--dart-define=API_BASE_URL=http://<your-computer's-LAN-IP>:8080/api` (same Wi-Fi) |
 
 ### 6. Stop everything
 
@@ -376,7 +393,10 @@ The same checks run automatically on every push and pull request via GitHub Acti
 | `javac 26` / `TypeTag :: UNKNOWN` / `ExceptionInInitializerError` | IDE compiling with the wrong JDK. Set Project SDK and Maven JDK to 21. |
 | `cannot find symbol` on a class that "should" exist | The file is missing or empty in the repo. Check `git status`; a new file showing 0 added lines is the giveaway. |
 | PowerShell: `Cannot bind parameter 'Headers'` | `curl` is an alias for `Invoke-WebRequest`. Use `curl.exe` or `Invoke-RestMethod` with `-Headers @{ ... }`. |
-| App works in PowerShell but not on the Android emulator | The emulator can't see your `localhost`. Use `http://10.0.2.2:8080/api`. |
+| Windows build fails: `Cannot open include file: 'atlstr.h'` | The secure-storage plugin needs ATL. Open Visual Studio Installer -> Modify -> Individual components -> tick **C++ ATL for latest v143 build tools (x86 & x64)** -> Modify. Then run `flutter run -d windows` again. |
+| `flutter run` says "No supported devices connected" | The platform folders haven't been generated. Run the `flutter create --platforms=... .` step above. |
+| App works in PowerShell but not on the Android emulator | Make sure the manifest has `android:usesCleartextTraffic="true"` (dev only); the address `10.0.2.2` is picked automatically. |
+| `flutter analyze` fails with `MyApp` not defined after `flutter create` | Delete the generated `mobile-app/test/widget_test.dart`. |
 | Everything worked, then 401s after about an hour | The access token expired. Log in again (silent token refresh in the app is not built yet). |
 | Suddenly 401 on a device that was working | That device's session was ended (logged out from another device, or a reused refresh token was detected). Log in again. Also expected once after upgrading to sessions: old tokens have no session. |
 
